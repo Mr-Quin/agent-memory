@@ -1,4 +1,5 @@
 import { groupTags, insertParams, type MemoryRow, placeholders, rowToMemory, vectorMetadata } from "./d1-rows.function";
+import type { MemoryUpdate } from "./manage.function";
 import type { MemoryRecord } from "./memory-record.function";
 import type { AccessUpdate, StoredMemory } from "./search.function";
 import type { MemoryStore } from "./tools.function";
@@ -93,6 +94,73 @@ export class CloudflareMemoryStore implements MemoryStore {
     );
   }
 
+  async softDelete(memories: StoredMemory[], now: number): Promise<void> {
+    const vectorIds = memories.map((m) => m.vectorId);
+    for (let i = 0; i < vectorIds.length; i += 1000) await this.env.VECTORIZE.deleteByIds(vectorIds.slice(i, i + 1000));
+    const db = this.env.DB;
+    await db.batch(
+      memories.map((m) =>
+        db.prepare("UPDATE memories SET deleted_at = ? WHERE content_hash = ? AND deleted_at IS NULL").bind(now, m.contentHash),
+      ),
+    );
+  }
+
+  async update(contentHash: string, update: MemoryUpdate): Promise<void> {
+    const db = this.env.DB;
+    const sets = ["updated_at = ?", "updated_at_iso = ?"];
+    const params: unknown[] = [update.updatedAt, update.updatedAtIso];
+    if (update.memoryType !== undefined) {
+      sets.push("memory_type = ?");
+      params.push(update.memoryType);
+    }
+    if (update.metadataJson !== undefined) {
+      sets.push("metadata_json = ?");
+      params.push(update.metadataJson);
+    }
+    if (update.tags !== undefined) {
+      sets.push("tags = ?");
+      params.push(update.tags.length ? update.tags.join(",") : null);
+    }
+    const live = "SELECT id FROM memories WHERE content_hash = ? AND deleted_at IS NULL";
+    await db.batch([
+      db.prepare(`UPDATE memories SET ${sets.join(", ")} WHERE content_hash = ? AND deleted_at IS NULL`).bind(...params, contentHash),
+      ...(update.tags === undefined
+        ? []
+        : [
+            db.prepare(`DELETE FROM memory_tags WHERE memory_id = (${live})`).bind(contentHash),
+            ...update.tags.flatMap((tag) => [
+              db.prepare("INSERT OR IGNORE INTO tags (name) VALUES (?)").bind(tag),
+              db.prepare(LINK_TAG_SQL).bind(contentHash, tag),
+            ]),
+          ]),
+    ]);
+  }
+
+  async deletedCount(): Promise<number> {
+    const row = await this.env.DB.prepare("SELECT count(*) AS n FROM memories WHERE deleted_at IS NOT NULL").first<{ n: number }>();
+    return row?.n ?? 0;
+  }
+
+  async document(name: string): Promise<string | null> {
+    try {
+      const row = await this.env.DB.prepare("SELECT content FROM documents WHERE name = ?").bind(name).first<{ content: string }>();
+      return row?.content ?? null;
+    } catch (error) {
+      if (isMissingTable(error)) return null;
+      throw error;
+    }
+  }
+
+  async documentNames(): Promise<string[]> {
+    try {
+      const { results } = await this.env.DB.prepare("SELECT name FROM documents ORDER BY name").all<{ name: string }>();
+      return results.map((r) => r.name);
+    } catch (error) {
+      if (isMissingTable(error)) return [];
+      throw error;
+    }
+  }
+
   private async load(where: string, params: unknown[], store: string | null, order = ""): Promise<StoredMemory[]> {
     const storeSql = store === null ? "" : " AND store = ?";
     const { results: rows } = await this.env.DB.prepare(
@@ -115,4 +183,8 @@ export class CloudflareMemoryStore implements MemoryStore {
     }
     return rows.map((row) => rowToMemory(row, tags.get(row.id) ?? []));
   }
+}
+
+function isMissingTable(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("no such table");
 }

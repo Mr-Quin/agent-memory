@@ -31,3 +31,8 @@ CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at);
 CREATE INDEX IF NOT EXISTS idx_memories_vector_id ON memories(vector_id);
 CREATE INDEX IF NOT EXISTS idx_memories_deleted_at ON memories(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
+CREATE TABLE IF NOT EXISTS documents (
+    name TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    updated_at REAL NOT NULL
+);

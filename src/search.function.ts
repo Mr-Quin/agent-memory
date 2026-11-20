@@ -9,6 +9,8 @@ export interface StoredMemory {
   metadata: Record<string, unknown>;
   createdAt: number;
   createdAtIso: string;
+  updatedAt?: number;
+  updatedAtIso?: string;
 }
 
 export interface SearchRequest {

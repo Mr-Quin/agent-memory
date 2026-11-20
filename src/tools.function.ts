@@ -1,3 +1,14 @@
+import { buildBrief } from "./bootstrap.function";
+import {
+  deleteReply,
+  deleteTargets,
+  listPage,
+  type MemoryUpdate,
+  parseDeleteArgs,
+  parseListArgs,
+  planUpdate,
+  storageStats,
+} from "./manage.function";
 import { buildMemoryRecords, type MemoryRecord } from "./memory-record.function";
 import {
   type AccessUpdate,
@@ -21,7 +32,14 @@ export interface MemoryStore {
   containing(text: string, store: string | null): Promise<StoredMemory[]>;
   recent(store: string | null): Promise<StoredMemory[]>;
   recordAccess(updates: AccessUpdate[]): Promise<void>;
+  softDelete(memories: StoredMemory[], now: number): Promise<void>;
+  update(contentHash: string, update: MemoryUpdate): Promise<void>;
+  deletedCount(): Promise<number>;
+  document(name: string): Promise<string | null>;
+  documentNames(): Promise<string[]>;
 }
+
+export const PERSONA_DOCUMENT = "persona";
 
 export interface CallContext {
   store: MemoryStore;
@@ -143,6 +161,108 @@ Examples:
     },
     annotations: { readOnlyHint: true },
   },
+  {
+    name: "agent_bootstrap",
+    description: `Call this first, at the start of every session, before anything else.
+
+Returns one markdown brief: who you are (your persona), the owner's top preferences, active
+projects, recent decisions and the gotchas most worth knowing. Pass project (a name or a
+proj:<name> tag) to narrow the brief to one project. It is clipped to a few thousand tokens;
+use memory_search for anything more.`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Optional project name or proj:<name> tag to focus on" },
+      },
+    },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: "memory_list",
+    description: `List and browse memories with pagination and optional filters, newest first.
+
+Unlike memory_search (semantic search), this does categorical listing/filtering.
+
+Examples:
+{}
+{"page": 2, "page_size": 50}
+{"tags": ["proj:x", "gotcha"], "tag_match": "all"}
+{"memory_type": "decision", "page_size": 10}
+{"stale_days": 30}`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        page: { type: "integer", default: 1, minimum: 1, description: "Page number (1-based)" },
+        page_size: { type: "integer", default: 20, minimum: 1, maximum: 100, description: "Results per page" },
+        tags: { ...TAGS_SCHEMA, description: "Filter by tags" },
+        tag_match: { type: "string", enum: ["any", "all"], default: "any", description: "Match ANY tag or ALL tags" },
+        memory_type: { type: "string", description: "Filter by memory type" },
+        stale_days: { type: "integer", minimum: 1, description: "Only memories not accessed in the last N days" },
+        agent_id: { type: "string", description: "Only memories authored by this agent. Defaults to the X-Agent-ID header when it is sent." },
+        store: { type: "string", description: "Store partition (default: 'default'). Use 'all' for every store." },
+      },
+    },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: "memory_delete",
+    description: `Delete memories by hash, or by tags and/or a date range (AND logic). Deleted
+memories are kept as tombstones in the database and leave search at once.
+
+No filters is an error. Use dry_run=true to preview a bulk delete.
+
+Examples:
+{"content_hash": "abc123def456"}
+{"tags": ["temporary", "draft"], "tag_match": "any"}
+{"tags": ["cleanup"], "before": "2024-01-01", "dry_run": true}`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        content_hash: { type: "string", description: "Specific memory hash to delete (ignores other filters if provided)" },
+        tags: { ...TAGS_SCHEMA, description: "Filter by these tags" },
+        tag_match: { type: "string", enum: ["any", "all"], default: "any", description: "Match ANY tag or ALL tags" },
+        before: { type: "string", description: "Delete memories created before this date (YYYY-MM-DD)" },
+        after: { type: "string", description: "Delete memories created on or after this date (YYYY-MM-DD)" },
+        dry_run: { type: "boolean", default: false, description: "Preview deletions without executing" },
+        store: { type: "string", description: "Store partition (default: 'default'). Use 'all' for every store." },
+      },
+    },
+    annotations: { destructiveHint: true },
+  },
+  {
+    name: "memory_update",
+    description: `Update a memory's tags, type or metadata in place, keeping its content and embedding.
+
+- updates.tags replaces the tags.
+- updates.memory_type sets the type.
+- updates.metadata, and any other keys in updates, merge into the metadata.
+
+Example:
+{"content_hash": "abc123...", "updates": {"tags": ["proj:x", "decision"], "metadata": {"status": "superseded"}}}`,
+    inputSchema: {
+      type: "object",
+      properties: {
+        content_hash: { type: "string", description: "The content hash of the memory to update." },
+        updates: {
+          type: "object",
+          description: "Fields to update.",
+          properties: {
+            tags: { ...TAGS_SCHEMA, description: "Replace existing tags with these." },
+            memory_type: { type: "string", description: "New memory type." },
+            metadata: { type: "object", description: "Custom metadata fields to merge with existing metadata." },
+          },
+        },
+      },
+      required: ["content_hash", "updates"],
+    },
+    annotations: { destructiveHint: true },
+  },
+  {
+    name: "memory_stats",
+    description: "Statistics about the stored memories: counts by type and agent, top tags, date range, stored documents.",
+    inputSchema: { type: "object", properties: {} },
+    annotations: { readOnlyHint: true },
+  },
 ] as const;
 
 // Workers AI embeds at most 100 texts per call; this keeps a store's chunks within one call.
@@ -153,6 +273,11 @@ export class ToolError extends Error {}
 export async function callTool(name: string, args: Record<string, unknown>, ctx: CallContext): Promise<ToolResult> {
   if (name === "memory_store") return storeMemory(args, ctx);
   if (name === "memory_search") return searchMemories(args, ctx);
+  if (name === "agent_bootstrap") return bootstrap(args, ctx);
+  if (name === "memory_list") return listMemories(args, ctx);
+  if (name === "memory_delete") return deleteMemories(args, ctx);
+  if (name === "memory_update") return updateMemory(args, ctx);
+  if (name === "memory_stats") return stats(ctx);
   throw new ToolError(`Unknown tool: ${name}`);
 }
 
@@ -230,4 +355,53 @@ async function semanticCandidates(req: SearchRequest, ctx: CallContext): Promise
     ctx.defer(ctx.store.recordAccess(candidates.map((m) => accessUpdate(m, req.query, now))));
   }
   return candidates;
+}
+
+async function bootstrap(args: Record<string, unknown>, ctx: CallContext): Promise<ToolResult> {
+  const project = typeof args.project === "string" && args.project.trim() ? args.project : undefined;
+  const [persona, memories] = await Promise.all([ctx.store.document(PERSONA_DOCUMENT), ctx.store.recent("default")]);
+  return { text: buildBrief({ persona, memories, project, now: ctx.now() }) };
+}
+
+async function listMemories(args: Record<string, unknown>, ctx: CallContext): Promise<ToolResult> {
+  const req = parseListArgs(args, ctx.agentIdHeader);
+  if ("error" in req) return { text: `Error listing memories: ${req.error}` };
+  return { text: listPage(await ctx.store.recent(req.store), req, ctx.now()) };
+}
+
+async function deleteMemories(args: Record<string, unknown>, ctx: CallContext): Promise<ToolResult> {
+  const req = parseDeleteArgs(args);
+  if ("error" in req) return { text: `Error: ${req.error}` };
+  let targets: StoredMemory[];
+  if (req.kind === "hash") {
+    const memory = await ctx.store.byHash(req.contentHash, req.store);
+    if (!memory) return { text: `Error: Memory not found: ${req.contentHash}` };
+    targets = [memory];
+  } else {
+    targets = deleteTargets(await ctx.store.recent(req.store), req);
+  }
+  if (!req.dryRun && targets.length) await ctx.store.softDelete(targets, ctx.now());
+  return { text: deleteReply(targets.map((m) => m.contentHash), req.dryRun, req.kind === "hash") };
+}
+
+async function updateMemory(args: Record<string, unknown>, ctx: CallContext): Promise<ToolResult> {
+  const hash = typeof args.content_hash === "string" ? args.content_hash.trim() : "";
+  const current = hash ? await ctx.store.byHash(hash, null) : null;
+  if (hash && !current && args.updates && typeof args.updates === "object") {
+    return { text: "Failed to update memory metadata: Memory not found" };
+  }
+  const plan = planUpdate(current ?? ({ tags: [], metadata: {} } as unknown as StoredMemory), args, ctx.now());
+  if ("error" in plan) return { text: plan.error };
+  if (!plan.changed) return { text: "Successfully updated memory metadata. No updates needed" };
+  await ctx.store.update(hash, plan.update);
+  return { text: "Successfully updated memory metadata. Memory metadata updated successfully" };
+}
+
+async function stats(ctx: CallContext): Promise<ToolResult> {
+  const [memories, deleted, documents] = await Promise.all([
+    ctx.store.recent(null),
+    ctx.store.deletedCount(),
+    ctx.store.documentNames(),
+  ]);
+  return { text: storageStats(memories, deleted, documents) };
 }

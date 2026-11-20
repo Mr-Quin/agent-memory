@@ -8,8 +8,16 @@
     "noUncheckedIndexedAccess": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "lib": ["ESNext"],
-    "types": ["./worker-configuration.d.ts", "@types/bun"]
+    "lib": [
+      "ESNext"
+    ],
+    "types": [
+      "./worker-configuration.d.ts",
+      "@types/bun"
+    ]
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "scripts"
+  ]
 }

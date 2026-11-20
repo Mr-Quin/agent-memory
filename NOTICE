@@ -15,5 +15,7 @@ The following were ported from MCP Memory Service 12.8.0 to TypeScript, with cha
 - the content splitter and content hash (src/memory-record.function.ts)
 - the memory type taxonomy (src/memory-record.function.ts)
 - tag normalization (src/memory-record.function.ts)
-- the memory_store and memory_search tool schemas and descriptions (src/tools.function.ts)
+- the memory_store, memory_search, memory_list, memory_delete and memory_update tool schemas
+  and descriptions (src/tools.function.ts), and the reply text of those tools
+  (src/search.function.ts, src/manage.function.ts)
 - the search reply format and the response size limiter (src/search.function.ts)

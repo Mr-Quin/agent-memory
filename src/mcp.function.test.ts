@@ -17,9 +17,30 @@ describe("handleRpc", () => {
     expect(old.body).toMatchObject({ result: { protocolVersion: "2024-11-05" } });
   });
 
-  test("lists the two tools", async () => {
+  test("lists the tools", async () => {
     const reply = (await rpc("tools/list")).body as { result: { tools: { name: string }[] } };
-    expect(reply.result.tools.map((t) => t.name)).toEqual(["memory_store", "memory_search"]);
+    expect(reply.result.tools.map((t) => t.name)).toEqual([
+      "memory_store", "memory_search", "agent_bootstrap", "memory_list", "memory_delete", "memory_update", "memory_stats",
+    ]);
+  });
+
+  test("serves the stored persona as a prompt and a resource", async () => {
+    const store = new FakeStore();
+    store.documents.set("persona", "You are Ada.");
+    const call = (method: string, params: unknown) => handleRpc({ jsonrpc: "2.0", id: 1, method, params }, fakeContext(store));
+    expect((await call("prompts/get", { name: "persona" })).body).toMatchObject({
+      result: { messages: [{ role: "user", content: { type: "text", text: "You are Ada." } }] },
+    });
+    expect((await call("resources/read", { uri: "memory://persona" })).body).toMatchObject({
+      result: { contents: [{ uri: "memory://persona", text: "You are Ada." }] },
+    });
+    expect((await call("prompts/get", { name: "other" })).body).toMatchObject({ error: { code: -32602 } });
+  });
+
+  test("says so when no persona is stored", async () => {
+    expect((await rpc("resources/read", { uri: "memory://persona" })).body).toMatchObject({
+      error: { message: "No persona is stored on this server" },
+    });
   });
 
   test("wraps a tool result and flags tool errors in the result, not as RPC errors", async () => {
@@ -30,8 +51,8 @@ describe("handleRpc", () => {
   });
 
   test("rejects unknown tools and methods, and a call without a name", async () => {
-    expect((await rpc("tools/call", { name: "memory_delete" })).body).toMatchObject({ error: { code: -32601 } });
-    expect((await rpc("resources/list")).body).toMatchObject({ error: { code: -32601 } });
+    expect((await rpc("tools/call", { name: "memory_consolidate" })).body).toMatchObject({ error: { code: -32601 } });
+    expect((await rpc("sampling/createMessage")).body).toMatchObject({ error: { code: -32601 } });
     expect(await rpc("tools/call", {})).toMatchObject({ status: 400, body: { error: { code: -32602 } } });
   });
 });

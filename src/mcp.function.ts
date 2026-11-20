@@ -1,6 +1,12 @@
-import { type CallContext, callTool, TOOLS, ToolError } from "./tools.function";
+import { type CallContext, callTool, PERSONA_DOCUMENT, TOOLS, ToolError } from "./tools.function";
 
 export const SERVER_INFO = { name: "agent-memory", version: "0.1.0" };
+const PERSONA_URI = "memory://persona";
+const PERSONA_PROMPT = {
+  name: PERSONA_DOCUMENT,
+  description: "Who you are: the persona every agent on this server takes on. The agent_bootstrap tool includes it with current context.",
+};
+const PERSONA_RESOURCE = { uri: PERSONA_URI, name: PERSONA_DOCUMENT, mimeType: "text/markdown" };
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 
 export interface RpcReply {
@@ -29,12 +35,33 @@ export async function handleRpc(message: unknown, ctx: CallContext): Promise<Rpc
       const asked = typeof params?.protocolVersion === "string" ? params.protocolVersion : "";
       return ok(id, {
         protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : "2024-11-05",
-        capabilities: { tools: {} },
+        capabilities: { tools: {}, prompts: {}, resources: {} },
         serverInfo: SERVER_INFO,
       });
     }
     case "ping":
       return ok(id, {});
+    case "prompts/list":
+      return ok(id, { prompts: [PERSONA_PROMPT] });
+    case "prompts/get": {
+      if (params?.name !== PERSONA_DOCUMENT) return fail(id, -32602, `Unknown prompt: ${String(params?.name)}`);
+      const persona = await ctx.store.document(PERSONA_DOCUMENT);
+      if (!persona) return fail(id, -32602, "No persona is stored on this server");
+      return ok(id, {
+        description: PERSONA_PROMPT.description,
+        messages: [{ role: "user", content: { type: "text", text: persona } }],
+      });
+    }
+    case "resources/list":
+      return ok(id, { resources: [PERSONA_RESOURCE] });
+    case "resources/templates/list":
+      return ok(id, { resourceTemplates: [] });
+    case "resources/read": {
+      if (params?.uri !== PERSONA_URI) return fail(id, -32002, `Resource not found: ${String(params?.uri)}`);
+      const persona = await ctx.store.document(PERSONA_DOCUMENT);
+      if (!persona) return fail(id, -32002, "No persona is stored on this server");
+      return ok(id, { contents: [{ uri: PERSONA_URI, mimeType: "text/markdown", text: persona }] });
+    }
     case "tools/list":
       return ok(id, { tools: TOOLS });
     case "tools/call": {

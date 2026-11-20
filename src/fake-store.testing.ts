@@ -1,3 +1,4 @@
+import type { MemoryUpdate } from "./manage.function";
 import type { MemoryRecord } from "./memory-record.function";
 import type { AccessUpdate, StoredMemory } from "./search.function";
 import type { CallContext, MemoryStore } from "./tools.function";
@@ -65,6 +66,31 @@ export class FakeStore implements MemoryStore {
   }
   async recordAccess(updates: AccessUpdate[]) {
     this.access.push(...updates);
+  }
+  deleted: string[] = [];
+  documents = new Map<string, string>();
+  async softDelete(memories: StoredMemory[]) {
+    const hashes = new Set(memories.map((m) => m.contentHash));
+    this.deleted.push(...hashes);
+    this.rows = this.rows.filter((r) => !hashes.has(r.contentHash));
+  }
+  async update(contentHash: string, update: MemoryUpdate) {
+    const row = this.rows.find((r) => r.contentHash === contentHash);
+    if (!row) return;
+    if (update.memoryType !== undefined) row.memoryType = update.memoryType;
+    if (update.metadataJson !== undefined) row.metadata = JSON.parse(update.metadataJson);
+    if (update.tags !== undefined) row.tags = update.tags;
+    row.updatedAt = update.updatedAt;
+    row.updatedAtIso = update.updatedAtIso;
+  }
+  async deletedCount() {
+    return this.deleted.length;
+  }
+  async document(name: string) {
+    return this.documents.get(name) ?? null;
+  }
+  async documentNames() {
+    return [...this.documents.keys()].sort();
   }
 }
 

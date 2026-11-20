@@ -8,6 +8,8 @@ export interface MemoryRow {
   memory_type: string | null;
   created_at: number;
   created_at_iso: string;
+  updated_at?: number | null;
+  updated_at_iso?: string | null;
   metadata_json: string | null;
   vector_id: string | null;
 }
@@ -31,6 +33,8 @@ export function rowToMemory(row: MemoryRow, tags: string[]): StoredMemory {
     metadata,
     createdAt: row.created_at,
     createdAtIso: row.created_at_iso,
+    updatedAt: row.updated_at ?? undefined,
+    updatedAtIso: row.updated_at_iso ?? undefined,
   };
 }
 

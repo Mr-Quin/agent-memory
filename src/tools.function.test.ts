@@ -116,3 +116,38 @@ describe("memory_search", () => {
     );
   });
 });
+
+describe("agent_bootstrap and the management tools", () => {
+  test("bootstrap returns the brief with the stored persona", async () => {
+    const store = new FakeStore();
+    store.documents.set("persona", "## Who you are\n\nYou are Ada.");
+    await seed(store);
+    const result = await callTool("agent_bootstrap", {}, fakeContext(store));
+    expect(result.text).toStartWith("# Bootstrap\n\nGenerated ");
+    expect(result.text).toContain("You are Ada.");
+    expect(result.text).toContain("## Active projects");
+  });
+
+  test("delete removes a memory from search, and update changes its tags", async () => {
+    const store = new FakeStore();
+    await seed(store);
+    const [first, second] = store.rows.map((r) => r.contentHash);
+    expect((await callTool("memory_update", { content_hash: first, updates: { tags: "proj:build,keep" } }, fakeContext(store))).text).toBe(
+      "Successfully updated memory metadata. Memory metadata updated successfully",
+    );
+    expect(store.rows[0]?.tags).toEqual(["proj:build", "keep"]);
+    expect((await callTool("memory_delete", { content_hash: second }, fakeContext(store))).text).toStartWith("Memory deleted successfully");
+    expect((await callTool("memory_search", { query: "backup job" }, fakeContext(store))).text).not.toContain("backup job runs");
+    expect((await callTool("memory_update", { content_hash: second, updates: { tags: "x" } }, fakeContext(store))).text).toBe(
+      "Failed to update memory metadata: Memory not found",
+    );
+  });
+
+  test("a dry run deletes nothing", async () => {
+    const store = new FakeStore();
+    await seed(store);
+    const result = await callTool("memory_delete", { tags: "proj:build", dry_run: true }, fakeContext(store));
+    expect(result.text).toStartWith("Found 1 memories matching the filters\n\nWould delete 1 memories");
+    expect(store.rows).toHaveLength(2);
+  });
+});
