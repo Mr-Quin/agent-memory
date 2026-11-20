@@ -102,6 +102,10 @@ bunx wrangler secret put MCP_API_KEY
 bun run deploy
 ```
 
+To deploy on every push instead, connect the repository under the Worker's Settings → Builds
+with build command `bun run ci`, deploy command `npx wrangler deploy` and the build variable
+`BUN_VERSION` set to the version in `mise.toml`. A commit that fails CI is not deployed.
+
 Create the D1 database (`bunx wrangler d1 create agent-memory`, then apply `schema.sql` with
 `--remote`) and the index (`bunx wrangler vectorize create agent-memory --dimensions=768
 --metric=cosine`) first if they do not exist. Moving from mcp-memory-service, reuse its key for
