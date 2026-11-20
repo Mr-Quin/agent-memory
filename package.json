@@ -1,0 +1,23 @@
+{
+  "name": "agent-memory",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An MCP memory server on Cloudflare Workers, D1, Vectorize and Workers AI, compatible with mcp-memory-service's Cloudflare backend",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "bun test",
+    "type-check": "tsc --noEmit",
+    "lint": "oxlint",
+    "ci": "bun run type-check && bun run lint && bun test",
+    "cf-typegen": "wrangler types --include-env=false",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.5",
+    "oxlint": "^1.94.0",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.165.0"
+  }
+}

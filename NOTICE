@@ -1,0 +1,19 @@
+agent-memory
+Copyright 2026 Mr-Quin
+
+This product includes material derived from MCP Memory Service
+(https://github.com/doobidoo/mcp-memory-service), Copyright 2024 Heinrich Krupp,
+licensed under the Apache License, Version 2.0. Its NOTICE reads in part:
+
+    MCP Memory Service
+    Copyright 2024 Heinrich Krupp
+    This product includes software developed by Heinrich Krupp.
+
+The following were ported from MCP Memory Service 12.8.0 to TypeScript, with changes:
+
+- the Cloudflare D1 schema (schema.sql)
+- the content splitter and content hash (src/memory-record.function.ts)
+- the memory type taxonomy (src/memory-record.function.ts)
+- tag normalization (src/memory-record.function.ts)
+- the memory_store and memory_search tool schemas and descriptions (src/tools.function.ts)
+- the search reply format and the response size limiter (src/search.function.ts)
