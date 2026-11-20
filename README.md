@@ -89,8 +89,9 @@ which the committed config leaves out: copy `wrangler.jsonc` to `wrangler.local.
 - `bunx wrangler dev --env readonly`: the deployed D1 and Vectorize with access tracking off. Only
   search against it; a store would write to live data.
 - `bunx wrangler dev --env scratch`: a local D1 and the `agent-memory-scratch` Vectorize index.
-  Create the schema once with
-  `bunx wrangler d1 execute agent-memory-scratch --env scratch --local --file schema.sql`.
+  Create the index once with
+  `bunx wrangler vectorize create agent-memory-scratch --dimensions=768 --metric=cosine` and the
+  schema with `bunx wrangler d1 execute agent-memory-scratch --env scratch --local --file schema.sql`.
 
 New vectors take up to a minute before Vectorize returns them.
 
