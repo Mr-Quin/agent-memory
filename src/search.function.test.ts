@@ -64,10 +64,12 @@ describe("applyFilters", () => {
   });
 });
 
-test("semanticFetchSizes over-fetches for agent and tag filters within Vectorize's cap", () => {
-  expect(semanticFetchSizes(req({ query: "q" }))).toEqual({ fetchLimit: 10, topK: 10 });
-  expect(semanticFetchSizes(req({ query: "q" }, "a"))).toEqual({ fetchLimit: 50, topK: 50 });
-  expect(semanticFetchSizes(req({ query: "q", tags: "x" }, "a"))).toEqual({ fetchLimit: 50, topK: 100 });
+test("semanticFetchSizes takes Vectorize's maximum whenever a filter is set", () => {
+  expect(semanticFetchSizes(req({ query: "q", limit: 3 }))).toEqual({ fetchLimit: 3, topK: 3 });
+  expect(semanticFetchSizes(req({ query: "q", limit: 1 }, "a"))).toEqual({ fetchLimit: 100, topK: 100 });
+  expect(semanticFetchSizes(req({ query: "q", limit: 1, tags: "x" }))).toEqual({ fetchLimit: 100, topK: 100 });
+  expect(semanticFetchSizes(req({ query: "q", limit: 1, after: "2026-11-01" }))).toEqual({ fetchLimit: 100, topK: 100 });
+  expect(semanticFetchSizes(req({ query: "q", limit: 1, before: "2026-11-01" }))).toEqual({ fetchLimit: 100, topK: 100 });
 });
 
 test("accessUpdate counts and keeps the last ten queries", () => {
