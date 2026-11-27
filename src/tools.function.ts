@@ -336,6 +336,10 @@ async function searchMemories(args: Record<string, unknown>, ctx: CallContext): 
     found = applyFilters(await ctx.store.containing(req.query ?? "", req.store), req);
   } else if (req.query) {
     found = applyFilters(await semanticCandidates(req, ctx), req);
+    if (ctx.trackAccess && found.length) {
+      const now = ctx.now();
+      ctx.defer(ctx.store.recordAccess(found.map((m) => accessUpdate(m, req.query, now))));
+    }
   } else {
     found = applyFilters(await ctx.store.recent(req.store), req);
   }
@@ -349,12 +353,7 @@ async function semanticCandidates(req: SearchRequest, ctx: CallContext): Promise
   const loaded = await ctx.store.byVectorIds(ids, req.store);
   const byId = new Map(loaded.map((m) => [m.vectorId, m]));
   const vectorOrder = ids.map((id) => byId.get(id)).filter((m): m is StoredMemory => m !== undefined);
-  const candidates = retrieveStage(vectorOrder, req, fetchLimit);
-  if (ctx.trackAccess && candidates.length) {
-    const now = ctx.now();
-    ctx.defer(ctx.store.recordAccess(candidates.map((m) => accessUpdate(m, req.query, now))));
-  }
-  return candidates;
+  return retrieveStage(vectorOrder, req, fetchLimit);
 }
 
 async function bootstrap(args: Record<string, unknown>, ctx: CallContext): Promise<ToolResult> {

@@ -75,6 +75,17 @@ describe("memory_search", () => {
     expect(result.text).not.toContain("build cache lives");
   });
 
+  test("finds a rare agent's memory at limit 1 when many others rank first", async () => {
+    const store = new FakeStore();
+    for (let i = 0; i < 40; i++) {
+      await callTool("memory_store", { content: `Runner note number ${i} about caches.` }, fakeContext(store, "agent-a"));
+    }
+    await callTool("memory_store", { content: "The backup job runs on host number nine." }, fakeContext(store, "agent-b"));
+    const result = await callTool("memory_search", { query: "runner caches", agent_id: "agent-b", limit: 1 }, fakeContext(store));
+    expect(result.text).toStartWith("Found 1 memories");
+    expect(result.text).toContain("backup job");
+  });
+
   test("filters by tags and records access on what it retrieved", async () => {
     const store = new FakeStore();
     await seed(store);

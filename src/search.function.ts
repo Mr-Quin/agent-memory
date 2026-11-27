@@ -32,6 +32,7 @@ const SUPPORTED = new Set([
   "agent_id", "after", "before", "store",
 ]);
 const HASH_LOOKUP_ARGS = new Set(["content_hash", "store", "limit", "max_response_chars"]);
+const VECTORIZE_MAX_TOP_K = 100;
 
 export function parseSearchArgs(args: Record<string, unknown>, headerAgentId?: string): SearchRequest | { error: string } {
   const unsupported = Object.keys(args).filter((k) => !SUPPORTED.has(k) && args[k] !== undefined && args[k] !== null);
@@ -116,10 +117,12 @@ export function applyFilters(memories: StoredMemory[], req: SearchRequest): Stor
     .slice(0, req.limit);
 }
 
+// Filters run after Vectorize picks its nearest ids, so a filtered search takes
+// as many as Vectorize allows; a rare agent or tag would otherwise fall outside topK.
 export function semanticFetchSizes(req: SearchRequest): { fetchLimit: number; topK: number } {
-  const fetchLimit = req.agentId !== undefined ? req.limit * 5 : req.limit;
-  const wanted = req.tags.length ? fetchLimit * 3 : fetchLimit;
-  return { fetchLimit, topK: Math.min(wanted, 100) };
+  const filtered = req.agentId !== undefined || req.tags.length > 0 || req.after !== undefined || req.before !== undefined;
+  const fetchLimit = filtered ? VECTORIZE_MAX_TOP_K : req.limit;
+  return { fetchLimit, topK: fetchLimit };
 }
 
 // The retrieve step keeps any-tag matches only and stops at fetchLimit,
