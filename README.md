@@ -4,6 +4,9 @@ A long-term memory MCP server for agents, on Cloudflare Workers. It speaks MCP o
 `/mcp` and keeps memories in D1 (rows and tags) and Vectorize (768 dims, cosine), with embeddings
 from Workers AI `@cf/baai/bge-base-en-v1.5`. There is nothing else to host.
 
+`/health` and `/mcp/health` answer without auth. `/mcp` (and `/mcp/`) takes POST with the bearer
+key; GET gets 405, and there is no SSE stream.
+
 It is a TypeScript reimplementation of the core tools of
 [mcp-memory-service](https://github.com/doobidoo/mcp-memory-service), compatible with that
 server's Cloudflare backend as of 12.8.0: same D1 schema, same vector ids, same content hashes
@@ -86,8 +89,8 @@ bun run ci
 which the committed config leaves out: copy `wrangler.jsonc` to `wrangler.local.jsonc`
 (ignored by git), add your `database_id`, and pass `-c wrangler.local.jsonc`. Two dev setups:
 
-- `bunx wrangler dev --env readonly`: the deployed D1 and Vectorize with access tracking off. Only
-  search against it; a store would write to live data.
+- `bunx wrangler dev --env readonly`: the deployed D1 and Vectorize with access tracking off. It
+  does not block writes: store, update and delete change live data, so only search against it.
 - `bunx wrangler dev --env scratch`: a local D1 and the `agent-memory-scratch` Vectorize index.
   Create the index once with
   `bunx wrangler vectorize create agent-memory-scratch --dimensions=768 --metric=cosine` and the
@@ -97,14 +100,17 @@ New vectors take up to a minute before Vectorize returns them.
 
 ## Deploy
 
+A push to `main` deploys through Workers Builds. Connect the repository under the Worker's
+Settings → Builds with build command `bun run ci`, deploy command `npx wrangler deploy` and the
+build variable `BUN_VERSION` set to the version in `mise.toml`. A commit that fails CI is not
+deployed.
+
+To deploy by hand instead:
+
 ```bash
 bunx wrangler secret put MCP_API_KEY
 bun run deploy
 ```
-
-To deploy on every push instead, connect the repository under the Worker's Settings → Builds
-with build command `bun run ci`, deploy command `npx wrangler deploy` and the build variable
-`BUN_VERSION` set to the version in `mise.toml`. A commit that fails CI is not deployed.
 
 Create the D1 database (`bunx wrangler d1 create agent-memory`, then apply `schema.sql` with
 `--remote`) and the index (`bunx wrangler vectorize create agent-memory --dimensions=768
