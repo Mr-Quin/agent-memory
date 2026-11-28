@@ -17,15 +17,18 @@ and chunking, same reply text. It is not a fork and does not track upstream; see
 The MCP schema lists each tool's arguments.
 
 - `agent_bootstrap`: call it first. One markdown brief: the persona, the owner's preferences,
-  active projects, recent decisions and common gotchas. Built from the data alone, with no model
-  call.
+  active projects, recent decisions and common gotchas. Preferences are memories tagged
+  `user:owner` of type `preference_signal`; active projects are the `proj:*` tags used in the last
+  30 days. Built from the data alone, with no model call.
 - `memory_store`: save a memory. Content over 800 characters is chunked as the Python server
-  chunked it. Unknown types are stored as `observation` with a warning.
+  chunked it, and content over 50,000 characters (`MAX_STORE_CHARS` in `src/tools.function.ts`)
+  is refused. Unknown types are stored as `observation` with a warning.
 - `memory_search`: semantic or exact search with tag, date and agent filters.
 - `memory_list`: newest first, with filters.
 - `memory_delete`: by hash, tags or date range. Rows stay as tombstones (`deleted_at`) and their
   vectors are removed.
-- `memory_update`: change tags, type or metadata. Content stays; versioned updates are not
+- `memory_update`: `tags` replaces, `memory_type` sets, `metadata` and other keys in `updates`
+  merge. Content stays; versioned updates are not
   supported.
 - `memory_stats`: counts, top tags and stored documents.
 
@@ -90,6 +93,13 @@ Point this Worker's bindings at the same D1 database and Vectorize index and dep
 is migrated. Reuse its `MCP_API_KEY` and stop the Python server so the two never write at once.
 Then point each client at `https://<worker>/mcp`, keeping its `X-Agent-ID` header, and try one
 search and one store.
+
+## Backup
+
+The repository schedules no backup. Export the D1 database with
+`bunx wrangler d1 export agent-memory --remote --output backups/agent-memory-<date>.sql`, for
+example nightly from cron. Every row keeps its content and `vector_id`, so the Vectorize index
+can be refilled by embedding each row again (there is no script for that yet).
 
 ## License
 
