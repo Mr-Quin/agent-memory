@@ -4,8 +4,8 @@ A long-term memory MCP server for agents, on Cloudflare Workers. It speaks MCP o
 `/mcp` and keeps memories in D1 (rows and tags) and Vectorize (768 dims, cosine), with embeddings
 from Workers AI `@cf/baai/bge-base-en-v1.5`. There is nothing else to host.
 
-`/health` and `/mcp/health` answer without auth. `/mcp` (and `/mcp/`) takes POST with the bearer
-key; GET gets 405, and there is no SSE stream.
+`/health` and `/mcp/health` answer without auth. `/mcp` and `/mcp/` return 401 without a valid
+bearer key, take POST with one, and answer 405 to GET; there is no SSE stream.
 
 It is a TypeScript reimplementation of the core tools of
 [mcp-memory-service](https://github.com/doobidoo/mcp-memory-service), compatible with that
@@ -74,7 +74,7 @@ systems that hold it, not from memories.
 - `src/document-sql.function.ts` and `scripts/push-document.script.ts`: storing a document such as the persona.
 - `src/mcp.function.ts`: JSON-RPC: tools, the persona prompt and resource.
 - `src/cloudflare-store.service.ts`: the port on D1, Vectorize and Workers AI.
-- `src/index.service.ts`: the Worker: bearer auth, `/mcp`, `/health`.
+- `src/index.service.ts`: the Worker entry point.
 - `schema.sql`: the Python server's D1 schema plus the `documents` table, for a scratch database.
 
 ## Develop
@@ -87,9 +87,9 @@ bun run ci
 
 `.dev.vars` holds `MCP_API_KEY=<any local key>`. Remote bindings in dev need the D1 database id,
 which the committed config leaves out: copy `wrangler.jsonc` to `wrangler.local.jsonc`
-(ignored by git), add your `database_id`, and pass `-c wrangler.local.jsonc`. Two dev setups:
+(ignored by git), add your `database_id` to the D1 binding under `env.readonly`, and pass `-c wrangler.local.jsonc`. Two dev setups:
 
-- `bunx wrangler dev --env readonly`: the deployed D1 and Vectorize with access tracking off. It
+- `bunx wrangler dev -c wrangler.local.jsonc --env readonly`: the deployed D1 and Vectorize with access tracking off. It
   does not block writes: store, update and delete change live data, so only search against it.
 - `bunx wrangler dev --env scratch`: a local D1 and the `agent-memory-scratch` Vectorize index.
   Create the index once with
@@ -100,19 +100,17 @@ New vectors take up to a minute before Vectorize returns them.
 
 ## Deploy
 
-A push to `main` deploys through Workers Builds. Connect the repository under the Worker's
+One-time setup, before either path: create the D1 database (`bunx wrangler d1 create
+agent-memory`, then apply `schema.sql` with `--remote`), create the index (`bunx wrangler
+vectorize create agent-memory --dimensions=768 --metric=cosine`) and set the key with
+`bunx wrangler secret put MCP_API_KEY`. Moving from mcp-memory-service, reuse its key so clients
+keep their header. The Worker needs no Cloudflare API token: D1, Vectorize and Workers AI are
+bindings.
+
+Workers Builds deploys a push to `main` once the repository is connected under the Worker's
 Settings → Builds with build command `bun run ci`, deploy command `npx wrangler deploy` and the
-build variable `BUN_VERSION` set to the version in `mise.toml`. A commit that fails CI is not
-deployed.
-
-Either way, set the key once with `bunx wrangler secret put MCP_API_KEY`. To deploy by hand
-instead, run `bun run deploy`.
-
-Create the D1 database (`bunx wrangler d1 create agent-memory`, then apply `schema.sql` with
-`--remote`) and the index (`bunx wrangler vectorize create agent-memory --dimensions=768
---metric=cosine`) first if they do not exist. Moving from mcp-memory-service, reuse its key for
-`MCP_API_KEY` so clients keep their header. The Worker needs no Cloudflare API token: D1,
-Vectorize and Workers AI are bindings.
+build variable `BUN_VERSION` set to the version in `mise.toml`. The build runs CI first. The manual
+`bun run deploy` skips CI.
 
 ## Moving from mcp-memory-service
 
